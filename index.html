@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DHCP Guard | BIC-NETWORK</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .nav-active { @apply bg-slate-800 text-white border-l-4 border-blue-500 shadow-inner; }
+        .hide-scroll::-webkit-scrollbar { display: none; }
+
+        #log-window {
+            background-color: #0a0c10;
+            background-image: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+            background-size: 100% 2px, 3px 100%;
+            text-shadow: 0 0 5px rgba(52, 211, 153, 0.3);
+        }
+        .log-line { border-bottom: 1px solid rgba(52, 211, 153, 0.03); }
+        .content-pane { animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        .device-tile { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+        .tile-active { @apply ring-2 ring-blue-500 border-blue-200 shadow-lg bg-blue-50/50 scale-[0.98]; }
+
+        .details-footer { border-top: 1px solid #f1f5f9; margin-top: 12px; padding-top: 8px; position: relative; }
+        .details-tooltip { visibility: hidden; position: absolute; bottom: 100%; left: 0; z-index: 50; background: #1e293b; color: white; padding: 12px; border-radius: 12px; font-size: 10px; width: 200px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); margin-bottom: 8px; }
+        .details-footer:hover .details-tooltip { visibility: visible; }
+
+        input:invalid:focus { @apply border-red-500 ring-1 ring-red-100; }
+    </style>
+</head>
+<body class="bg-slate-50 flex h-screen overflow-hidden text-slate-900">
+
+    <div id="login-overlay" class="fixed inset-0 bg-slate-900 z-[300] flex items-center justify-center p-6">
+        <div class="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm border border-slate-200">
+            <div class="mb-6 text-center">
+                <div class="bg-blue-600 w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                </div>
+                <h2 class="text-xl font-black uppercase tracking-tight">System Access</h2>
+                <p class="text-xs text-slate-400 font-bold mt-1 tracking-widest uppercase">BIC-NETWORK</p>
+            </div>
+            <form onsubmit="handleLogin(event)" class="space-y-4">
+                <input id="l-user" type="text" placeholder="Username" required class="w-full p-3 bg-slate-50 border rounded-xl text-sm outline-none focus:border-blue-500 font-semibold">
+                <input id="l-pass" type="password" placeholder="Password" required class="w-full p-3 bg-slate-50 border rounded-xl text-sm outline-none focus:border-blue-500 font-semibold">
+                <button type="submit" class="w-full bg-slate-900 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-black transition-all active:scale-95">Authenticate</button>
+            </form>
+        </div>
+    </div>
+
+    <aside class="w-64 bg-slate-900 text-slate-400 flex flex-col shadow-2xl z-10">
+        <div class="p-5 text-white text-xl font-black border-b border-slate-800 tracking-tighter flex items-center">
+            <div class="bg-blue-600 p-1.5 rounded-lg mr-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+            </div> DHCP GUARD
+        </div>
+
+        <nav id="sidebar-nav" class="flex-1 p-3 space-y-1 overflow-y-auto hide-scroll">
+            <button id="default-nav" onclick="switchTab('logs', this)" class="nav-item nav-active w-full p-2.5 rounded flex items-center transition-all text-sm font-bold">
+                <svg class="w-5 h-5 mr-3 flex-shrink-0 text-orange-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                <span>Live Activity</span>
+            </button>
+
+            <div class="my-4 border-t border-slate-800/50"></div>
+            <div class="w-full p-2.5 flex items-center text-sm font-bold text-slate-200">
+                <svg class="w-5 h-5 mr-3 flex-shrink-0 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9h18" /></svg>
+                <span>Network Segments</span>
+            </div>
+            <div id="subnet-container" class="pl-6 space-y-1"></div>
+
+            <div class="my-4 border-t border-slate-800/50"></div>
+            <div class="w-full p-2.5 flex items-center text-sm font-bold text-slate-200">
+                <svg class="w-5 h-5 mr-3 flex-shrink-0 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span>Admin</span>
+            </div>
+
+            <div class="pl-6 space-y-1">
+                <button onclick="switchTab('config', this)" class="nav-item w-full p-2.5 rounded hover:bg-slate-800 text-blue-400 font-bold transition-all flex items-center text-xs">
+                    <svg class="w-4 h-4 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                    <span>Add Host</span>
+                </button>
+                <button onclick="switchTab('settings', this)" class="nav-item w-full p-2.5 rounded hover:bg-slate-800 text-slate-400 font-bold transition-all flex items-center text-xs">
+                    <svg class="w-4 h-4 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg>
+                    <span>Settings</span>
+                </button>
+                <button onclick="handleLogout()" class="w-full p-2.5 rounded hover:bg-red-950/30 text-red-400 font-bold transition-all flex items-center text-xs mt-4">
+                    <svg class="w-4 h-4 mr-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                    <span>Sign Out</span>
+                </button>
+            </div>
+        </nav>
+
+        <div class="p-5 border-t border-slate-800 bg-slate-950/50">
+            <div class="text-[11px] font-black text-slate-200 uppercase tracking-wider leading-none">Written by Google Gemini</div>
+            <div class="text-[9px] text-slate-500 font-medium mt-1">Designed by Mark De Silva</div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col min-w-0 bg-white">
+        <header class="h-14 border-b border-slate-200 flex items-center px-6 justify-between bg-white/80 backdrop-blur-md sticky top-0 z-20">
+            <h1 id="view-title" class="text-sm font-black text-slate-800 uppercase tracking-widest leading-none">Live Activity</h1>
+            <div class="flex items-center space-x-4">
+                <div class="flex bg-slate-100 p-1 rounded-lg space-x-1 border border-slate-200">
+                    <button onclick="controlService('start')" class="p-1.5 hover:bg-white rounded text-emerald-600 active:scale-90 transition-all"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"/></svg></button>
+                    <button onclick="controlService('stop')" class="p-1.5 hover:bg-white rounded text-red-600 active:scale-90 transition-all"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg></button>
+                    <button onclick="controlService('restart')" class="p-1.5 hover:bg-white rounded text-blue-600 active:scale-90 transition-all"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button>
+                </div>
+                <div class="h-2.5 w-2.5 bg-green-500 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse"></div>
+            </div>
+        </header>
+
+        <div class="p-6 flex-1 overflow-y-auto bg-slate-50/50 hide-scroll">
+            <section id="view-logs" class="content-pane h-full relative flex flex-col">
+                <div class="mb-4 flex items-center justify-between bg-slate-900/90 p-3 rounded-xl border border-slate-800 shadow-xl backdrop-blur-md">
+                    <div class="flex items-center flex-1 mr-4">
+                        <svg class="w-4 h-4 text-emerald-500/50 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                        <input id="log-filter" type="text" oninput="applyLogFilter()" placeholder="Filter stream..." class="bg-transparent text-emerald-400 text-xs font-mono outline-none w-full placeholder:text-emerald-900">
+                    </div>
+                    <div class="flex space-x-1 border-l border-slate-800 pl-4">
+                        <button onclick="adjustLogFont(1)" class="bg-slate-800 hover:bg-slate-700 text-white w-7 h-7 rounded-md flex items-center justify-center transition-all active:scale-90 font-bold text-sm">+</button>
+                        <button onclick="adjustLogFont(-1)" class="bg-slate-800 hover:bg-slate-700 text-white w-7 h-7 rounded-md flex items-center justify-center transition-all active:scale-90 font-bold text-sm">-</button>
+                        <button onclick="clearLogs()" class="bg-red-900 hover:bg-red-800 text-white px-3 h-7 rounded-md flex items-center justify-center transition-all active:scale-90 text-[9px] font-black tracking-widest ml-2">CLEAR</button>
+                    </div>
+                </div>
+                <div id="log-window" class="text-emerald-400 p-6 rounded-2xl font-mono text-sm flex-1 overflow-y-auto shadow-2xl border border-slate-900 scroll-smooth relative">
+                    <div id="log-content"></div>
+                </div>
+            </section>
+
+            <section id="view-tiles" class="content-pane hidden">
+                <div class="bg-white border border-slate-200 rounded-2xl shadow-sm mb-6 overflow-hidden">
+                    <div class="px-5 py-2 border-b border-slate-50 flex justify-between items-center bg-white">
+                        <div class="flex items-center space-x-3">
+                            <h2 id="hero-graph-ip" class="text-sm font-black text-slate-800 tracking-tighter">Select Device</h2>
+                            <span class="text-[9px] font-bold text-slate-300 uppercase tracking-widest border-l pl-3 italic">Latency Monitoring</span>
+                        </div>
+                    </div>
+                    <div class="p-3 h-32 w-full"><canvas id="heroPingChart"></canvas></div>
+                </div>
+                <div id="tile-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3"></div>
+            </section>
+
+            <section id="view-config" class="content-pane hidden">
+                <div class="max-w-lg mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden p-8 mt-4">
+                    <h2 class="text-lg font-black uppercase mb-6 tracking-tight flex items-center">
+                        <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"/></svg>
+                        Static Registration
+                    </h2>
+                    <form onsubmit="event.preventDefault(); saveHost();" class="space-y-4">
+                        <div class="grid grid-cols-2 gap-3 relative">
+                            <div class="relative">
+                                <input id="f-name" list="hostnames-list" type="text" placeholder="Hostname" required title="Please enter a valid hostname" class="w-full p-3 bg-slate-50 border rounded-xl text-sm outline-none focus:border-blue-500 font-semibold pr-10">
+                                <datalist id="hostnames-list"></datalist>
+                                <div id="f-status-badge" class="absolute right-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-slate-200 transition-colors"></div>
+                            </div>
+                            <input id="f-ip" type="text" placeholder="IP Address" required
+                                   pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$"
+                                   title="Valid IP range 0-255 required" class="p-3 bg-slate-50 border rounded-xl text-sm mono outline-none focus:border-blue-500">
+                        </div>
+                        <input id="f-mac" type="text" placeholder="MAC Address" required
+                               pattern="^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]{2})$"
+                               title="Valid MAC address required (e.g., AA:BB:CC:DD:EE:FF)" class="w-full p-3 bg-slate-50 border rounded-xl text-sm mono outline-none focus:border-blue-500">
+                        <select id="f-target" class="w-full p-3 bg-slate-50 border rounded-xl text-sm font-bold text-slate-600"></select>
+
+                        <div class="grid grid-cols-2 gap-3 mt-4">
+                            <button type="button" onclick="switchTab('logs', document.getElementById('default-nav'))" class="w-full bg-slate-100 text-slate-600 py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all active:scale-95">Cancel</button>
+                            <button type="submit" class="w-full bg-blue-600 text-white py-4 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-blue-700 shadow-lg transition-all active:scale-95">Commit to Config</button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+
+            <section id="view-settings" class="content-pane hidden">
+                <div class="max-w-4xl mx-auto space-y-6 mt-4">
+                    <div class="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden p-8">
+                        <h2 class="text-lg font-black uppercase mb-6 tracking-tight flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
+                            System Administration
+                        </h2>
+                        <div class="grid md:grid-cols-2 gap-8">
+                            <form onsubmit="event.preventDefault(); addAdmin();" class="space-y-3">
+                                <p class="text-[10px] font-black uppercase text-slate-400 mb-2">Create New Administrator</p>
+                                <input id="s-new-user" type="text" placeholder="New Username" required class="w-full p-3 bg-slate-50 border rounded-xl text-sm font-semibold outline-none focus:border-blue-500">
+                                <input id="s-new-pass" type="password" placeholder="Set Password" required class="w-full p-3 bg-slate-50 border rounded-xl text-sm font-semibold outline-none focus:border-blue-500">
+                                <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 active:scale-95">Add User</button>
+                            </form>
+                            
+                            <form onsubmit="event.preventDefault(); updatePassword();" class="space-y-3">
+                                <p class="text-[10px] font-black uppercase text-slate-400 mb-2">Reset User Password</p>
+                                <select id="s-target-user" class="w-full p-3 bg-slate-50 border rounded-xl text-sm font-semibold outline-none focus:border-blue-500">
+                                    <option value="">Select User...</option>
+                                </select>
+                                <input id="s-change-pass" type="password" placeholder="New Password" required class="w-full p-3 bg-slate-50 border rounded-xl text-sm font-semibold outline-none focus:border-blue-500">
+                                <button type="submit" class="w-full bg-slate-900 text-white py-3 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-black transition-all active:scale-95">Update Password</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div id="details-modal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl border border-slate-200">
+            <div class="p-6 border-b flex justify-between items-center">
+                <h3 class="font-black uppercase text-xs tracking-widest text-slate-500">Device Identity</h3>
+                <button onclick="closeDetails()" class="text-slate-400 hover:text-slate-900 font-bold text-xl">&times;</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <input id="det-mac" type="hidden">
+                <input id="det-hostname" type="hidden">
+                <div><label class="text-[9px] font-black uppercase text-slate-400 mb-1 block">Description</label>
+                     <input id="det-desc" class="w-full p-3 bg-slate-50 border rounded-xl text-sm outline-none focus:border-blue-500"></div>
+                <div><label class="text-[9px] font-black uppercase text-slate-400 mb-1 block">Admin / Owner</label>
+                     <input id="det-admin" class="w-full p-3 bg-slate-50 border rounded-xl text-sm outline-none focus:border-blue-500"></div>
+                <div><label class="text-[9px] font-black uppercase text-slate-400 mb-1 block">Comments</label>
+                     <textarea id="det-comm" class="w-full p-3 bg-slate-50 border rounded-xl text-sm h-20 outline-none focus:border-blue-500"></textarea></div>
+                
+                <div class="flex space-x-2">
+                    <button onclick="commitDetails()" class="flex-1 bg-slate-900 text-white py-3 rounded-xl font-black text-[10px] tracking-widest uppercase hover:bg-black transition-all">Save Changes</button>
+                    <button onclick="deleteHost()" class="bg-red-100 text-red-600 px-4 rounded-xl hover:bg-red-600 hover:text-white transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] hidden">
+        <div id="toast-bg" class="px-6 py-3 rounded-2xl shadow-2xl flex items-center space-x-3 border animate-bounce">
+            <span id="toast-text" class="font-black uppercase text-[11px] tracking-widest text-white"></span>
+        </div>
+    </div>
+
+    <script>
+        let configSchema = { subnets: [] };
+        let heroChart = null;
+        let currentFontSize = 13;
+        let allKnownHosts = [];
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const user = document.getElementById('l-user').value;
+            const pass = document.getElementById('l-pass').value;
+            
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: user, password: pass})
+                });
+                
+                if (res.ok) {
+                    document.getElementById('login-overlay').classList.add('hidden');
+                    document.getElementById('l-pass').value = ''; // Clear for security
+                    showToast("Access Granted");
+                    init(); 
+                } else {
+                    showToast("Invalid Credentials", false);
+                }
+            } catch (err) {
+                showToast("Server Connection Failed", false);
+            }
+        }
+
+        // LOGOUT LOGIC
+function handleLogout() {
+    if(confirm("Confirm security log out?")) {
+        // 1. Clear any local sensitive data
+        document.getElementById('l-user').value = '';
+        document.getElementById('l-pass').value = '';
+        
+        // 2. Hide all content panes and show login
+        document.querySelectorAll('.content-pane').forEach(p => p.classList.add('hidden'));
+        document.getElementById('login-overlay').classList.remove('hidden');
+        
+        // 3. Optional: Hard reload to clear JavaScript memory/variables
+        // window.location.reload(); 
+        
+        showToast("Session Terminated");
+    }
+}
+        async function refreshUserList() {
+            try {
+                const res = await fetch('/api/settings/list-users');
+                const users = await res.json();
+                const select = document.getElementById('s-target-user');
+                select.innerHTML = '<option value="">Select User...</option>' + 
+                    users.map(u => `<option value="${u}">${u}</option>`).join('');
+            } catch (e) { console.error("Could not load users"); }
+        }
+
+        async function addAdmin() {
+            const username = document.getElementById('s-new-user').value;
+            const password = document.getElementById('s-new-pass').value;
+            const res = await fetch('/api/settings/add-user', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, password})
+            });
+            const data = await res.json();
+            showToast(data.message, data.status === 'success');
+            if(data.status === 'success') {
+                document.getElementById('s-new-user').value = '';
+                document.getElementById('s-new-pass').value = '';
+                refreshUserList();
+            }
+        }
+
+        async function updatePassword() {
+            const username = document.getElementById('s-target-user').value;
+            const password = document.getElementById('s-change-pass').value;
+            if(!username) return showToast("Select a user first", false);
+            
+            const res = await fetch('/api/settings/update-password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, password})
+            });
+            const data = await res.json();
+            showToast(data.message, data.status === 'success');
+            if(data.status === 'success') document.getElementById('s-change-pass').value = '';
+        }
+
+        function showToast(message, isSuccess = true) {
+            const toast = document.getElementById('toast');
+            const toastBg = document.getElementById('toast-bg');
+            const toastText = document.getElementById('toast-text');
+            toastText.innerText = message;
+            toastBg.className = isSuccess
+                ? "bg-emerald-500 border-emerald-400 px-6 py-3 rounded-2xl shadow-2xl flex items-center space-x-3 border animate-bounce"
+                : "bg-red-500 border-red-400 px-6 py-3 rounded-2xl shadow-2xl flex items-center space-x-3 border animate-bounce";
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3500);
+        }
+
+        function switchTab(id, el) {
+            document.querySelectorAll('.content-pane').forEach(p => p.classList.add('hidden'));
+            document.getElementById('view-' + id).classList.remove('hidden');
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('nav-active'));
+            if(el) el.classList.add('nav-active');
+            document.getElementById('view-title').innerText = id.replace('-', ' ');
+            if(id === 'config') refreshHostnames();
+            if(id === 'settings') refreshUserList();
+            // Update the header logic here
+            const titleElement = document.getElementById('view-title');
+            if (id === 'tiles') {
+               titleElement.innerText = 'CLIENTS'; // Changes TILES to CLIENTS
+            } else if (id === 'logs') {
+               titleElement.innerText = 'LIVE ACTIVITY';
+            } else if (id === 'config') {
+               titleElement.innerText = 'ADMIN';
+            } else {
+               titleElement.innerText = id.replace('-', ' ').toUpperCase();
+            }
+
+        }
+
+        async function init() {
+            const res = await fetch('/api/config-schema');
+            configSchema = await res.json();
+            const container = document.getElementById('subnet-container');
+            container.innerHTML = '';
+
+            configSchema.subnets.forEach(sub => {
+                const btn = document.createElement('button');
+                btn.className = "nav-item w-full text-left p-2 rounded hover:bg-slate-800 transition-all flex items-center group";
+                btn.onclick = () => loadSubnet(sub, btn);
+                btn.innerHTML = `
+                    <svg class="w-4 h-4 mr-3 opacity-40 group-hover:text-blue-500 group-hover:opacity-100 transition-all flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                        <path d="M12 3a9 9 0 0 1 9 9 9 9 0 0 1-9 9 9 9 0 0 1-9-9 9 9 0 0 1 9-9Z" />
+                        <path d="M12 15h8.4M12 9h8.4M12 3v18M12 3a15.3 15.3 0 0 1 4.5 9 15.3 15.3 0 0 1-4.5 9" />
+                    </svg>
+                    <div class="flex flex-col min-w-0">
+                        <span class="text-[11px] text-slate-200 font-bold truncate">${sub.network}</span>
+                        <span class="text-[8px] text-slate-500 font-mono tracking-tighter">${sub.range}</span>
+                    </div>`;
+                container.appendChild(btn);
+            });
+            const select = document.getElementById('f-target');
+            select.innerHTML = '<option value="main">dhcpd.conf</option>';
+            configSchema.includes.forEach(inc => select.innerHTML += `<option value="${inc}">${inc}</option>`);
+        }
+
+        async function refreshHostnames() {
+            const res = await fetch('/api/data');
+            const data = await res.json();
+            allKnownHosts = data.hosts.sort((a, b) => {
+                const nameA = (a.name || a.hostname || "").toLowerCase();
+                const nameB = (b.name || b.hostname || "").toLowerCase();
+                return nameA.localeCompare(nameB);
+            });
+            const list = document.getElementById('hostnames-list');
+            list.innerHTML = allKnownHosts.map(h => `<option value="${h.name || h.hostname}">`).join('');
+        }
+
+        document.getElementById('f-name').addEventListener('input', function(e) {
+            const val = e.target.value;
+            const match = allKnownHosts.find(h => (h.name || h.hostname) === val);
+            const badge = document.getElementById('f-status-badge');
+            const targetSelect = document.getElementById('f-target');
+            if (match) {
+                document.getElementById('f-mac').value = match.mac || '';
+                document.getElementById('f-ip').value = match.ip || '';
+                badge.className = `absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full transition-all ${match.status === 'online' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`;
+                if (match.source) {
+                    const options = Array.from(targetSelect.options);
+                    const targetOption = options.find(opt => opt.value === match.source || opt.text === match.source);
+                    if (targetOption) targetSelect.value = targetOption.value;
+                }
+            } else { badge.className = "absolute right-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-slate-200"; }
+        });
+
+        async function loadSubnet(sub, navEl) {
+            switchTab('tiles', navEl);
+            const res = await fetch('/api/data');
+            const data = await res.json();
+            const grid = document.getElementById('tile-grid');
+            grid.innerHTML = '';
+            const startLimit = parseInt(sub.range.split(' - ')[0].split('.').pop());
+            const endLimit = parseInt(sub.range.split(' - ')[1].split('.').pop());
+            const filtered = data.hosts.filter(h => h.ip && h.ip.startsWith(sub.prefix) && (parseInt(h.ip.split('.').pop()) >= startLimit && parseInt(h.ip.split('.').pop()) <= endLimit));
+
+            filtered.forEach((item, index) => {
+                const color = item.status === 'online' ? 'bg-emerald-500' : 'bg-red-500';
+                const div = document.createElement('div');
+                div.className = "device-tile bg-white p-4 rounded-2xl border border-slate-200 shadow-sm cursor-pointer hover:border-blue-400 hover:shadow-md";
+                div.onclick = () => updateHeroChart(item.ip, div);
+                div.innerHTML = `
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="text-[8px] font-black uppercase px-2 py-0.5 rounded shadow-sm ${item.source ? 'bg-blue-600 text-white' : 'bg-emerald-500 text-white'}">${item.source ? 'Static' : 'Lease'}</div>
+                        <div class="h-2.5 w-2.5 ${color} rounded-full shadow-sm"></div>
+                    </div>
+                    <h3 class="font-extrabold text-slate-800 truncate text-[11px] mb-0.5">${item.name || item.hostname}</h3>
+                    <div class="text-lg font-black text-slate-900 tracking-tighter leading-none">${item.ip}</div>
+                    <p class="text-[9px] text-slate-400 mono mt-2 opacity-70 tracking-tighter">${item.mac.toUpperCase()}</p>
+                    <div class="details-footer group/footer" onclick="event.stopPropagation(); openDetails('${item.mac}', '${item.name || item.hostname}')">
+                        <div class="flex items-center justify-between opacity-30 hover:opacity-100 transition-opacity">
+                            <span class="text-[8px] font-black uppercase tracking-tighter">Details</span>
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="2.5"/></svg>
+                        </div>
+                        <div id="hover-${item.mac.replace(/:/g,'')}" class="details-tooltip group-hover/footer:visible">Loading...</div>
+                    </div>`;
+                grid.appendChild(div);
+                fetchDetailsForHover(item.mac);
+                if(index === 0) updateHeroChart(item.ip, div);
+            });
+        }
+
+        async function fetchDetailsForHover(mac) {
+            const res = await fetch(`/api/get-details/${mac}`);
+            const data = await res.json();
+            const tip = document.getElementById(`hover-${mac.replace(/:/g,'')}`);
+            if (data.description || data.admin_name || data.comments) {
+                tip.innerHTML = `<div class="font-black border-b border-white/10 pb-1 mb-1 uppercase tracking-widest text-[8px]">${data.description || 'No Description'}</div>
+                                 <div class="opacity-70 text-[9px]">Admin: ${data.admin_name || 'N/A'}</div>
+                                 <div class="mt-1 line-clamp-2 text-slate-400">${data.comments || ''}</div>`;
+            } else { tip.innerText = "Click to manage identity..."; }
+        }
+
+        async function openDetails(mac, hostname) {
+            const res = await fetch(`/api/get-details/${mac}`);
+            const data = await res.json();
+            document.getElementById('det-mac').value = mac;
+            document.getElementById('det-hostname').value = hostname;
+            document.getElementById('det-desc').value = data.description || '';
+            document.getElementById('det-admin').value = data.admin_name || '';
+            document.getElementById('det-comm').value = data.comments || '';
+            document.getElementById('details-modal').classList.remove('hidden');
+        }
+
+        function closeDetails() { document.getElementById('details-modal').classList.add('hidden'); }
+
+        async function commitDetails() {
+            const payload = {
+                mac: document.getElementById('det-mac').value,
+                description: document.getElementById('det-desc').value,
+                admin_name: document.getElementById('det-admin').value,
+                comments: document.getElementById('det-comm').value
+            };
+            await fetch('/api/save-details', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+            closeDetails();
+            fetchDetailsForHover(payload.mac);
+        }
+
+        async function deleteHost() {
+            const hostname = document.getElementById('det-hostname').value;
+            if(!confirm(`Are you sure you want to delete ${hostname}?`)) return;
+            const res = await fetch(`/api/delete-host/${hostname}`, { method: 'DELETE' });
+            const data = await res.json();
+            showToast(data.message, data.status === 'success');
+            if(data.status === 'success') { closeDetails(); setTimeout(() => location.reload(), 1500); }
+        }
+
+        async function updateHeroChart(ip, tileEl) {
+            document.getElementById('hero-graph-ip').innerText = ip;
+            document.querySelectorAll('.device-tile').forEach(t => t.classList.remove('tile-active'));
+            if(tileEl) tileEl.classList.add('tile-active');
+            const res = await fetch(`/api/ping-history/${ip}`);
+            const data = await res.json();
+            const formattedData = data.map(d => (d.y > 0 ? d.y : null));
+            const labels = data.map(d => new Date(d.x).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
+            const ctx = document.getElementById('heroPingChart').getContext('2d');
+            if (heroChart) heroChart.destroy();
+            heroChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: formattedData,
+                        borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.05)',
+                        fill: true, tension: 0.4, pointRadius: 2, borderWidth: 2, spanGaps: false
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: false, suggestedMin: 1, ticks: { font: { size: 9, family: 'JetBrains Mono' } } },
+                        x: { ticks: { font: { size: 9, family: 'JetBrains Mono' } } }
+                    }
+                }
+            });
+        }
+
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        const logSocket = new WebSocket(wsProtocol + window.location.host + "/ws/logs");
+        logSocket.onmessage = (e) => {
+            const container = document.getElementById('log-content');
+            const win = document.getElementById('log-window');
+            const line = document.createElement('div');
+            line.className = "log-line py-1.5 px-2 font-mono";
+            let rawText = e.data;
+            let formattedText = rawText;
+            if (rawText.includes('DHCPREQUEST') || rawText.includes('DHCPACK')) { formattedText = `<span class="text-sky-300 font-bold">${rawText}</span>`; }
+            else if (rawText.includes('DHCPDISCOVER')) { formattedText = `<span class="text-orange-300 font-bold">${rawText}</span>`; }
+            else if (rawText.includes('DHCPINFORM')) { formattedText = `<span class="text-purple-300 font-bold">${rawText}</span>`; }
+            else if (rawText.includes('DHCPRELEASE')) { formattedText = `<span class="text-red-400 font-bold">${rawText}</span>`; }
+            line.innerHTML = `<span class="opacity-30 mr-2">$</span>` + formattedText;
+            const f = document.getElementById('log-filter').value.toLowerCase();
+            if (f && !rawText.toLowerCase().includes(f)) { line.style.display = 'none'; }
+            container.appendChild(line);
+            if (line.style.display !== 'none') { win.scrollTop = win.scrollHeight; }
+        };
+
+        function clearLogs() { document.getElementById('log-content').innerHTML = ''; }
+        function adjustLogFont(d) { currentFontSize += d; document.getElementById('log-window').style.fontSize = currentFontSize + 'px'; }
+        async function controlService(a) { await fetch(`/api/service/${a}`, { method: 'POST' }); }
+        function applyLogFilter() {
+            const f = document.getElementById('log-filter').value.toLowerCase();
+            document.querySelectorAll('.log-line').forEach(l => l.style.display = l.innerText.toLowerCase().includes(f) ? 'block' : 'none');
+        }
+
+        async function saveHost() {
+            const f_name = document.getElementById('f-name').value.trim();
+            const f_mac = document.getElementById('f-mac').value.trim().toLowerCase();
+            const f_ip = document.getElementById('f-ip').value.trim();
+            const f_target = document.getElementById('f-target').value;
+            if(!f_name || !f_mac || !f_ip) { showToast("All fields are required", false); return; }
+            try {
+                const payload = { hostname: f_name, mac: f_mac, ip: f_ip, target: f_target };
+                const res = await fetch('/api/add-host', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+                const data = await res.json();
+                if (data.status === 'success') { showToast(data.message, true); setTimeout(() => location.reload(), 2000); }
+                else { showToast(data.message || "Error saving host", false); }
+            } catch (error) { showToast("Network error: Server unreachable", false); }
+        }
+
+    </script>
+</body>
+</html>
