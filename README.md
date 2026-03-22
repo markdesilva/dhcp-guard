@@ -120,7 +120,7 @@ systemctl restart apache2
 + Edit /etc/systemd/system/dhcp-guard.service
 + Add the following and save the file
 ```
-  [Unit]
+[Unit]
 Description=DHCP Guard Web UI Backend
 After=network.target isc-dhcp-server.service
 
