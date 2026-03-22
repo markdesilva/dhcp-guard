@@ -2,7 +2,7 @@
 Vibe coded (and heavly human edited) Web-Based Management for ISC-DHCP-Server
 
 ## History
-ISC has moved to KEA DHCP and has their own UI, but didn't really meet what I needed and I still had multiple installations running off isc-dhcp-server. I didn't like glass and so I decided to make use of AI to vibe code a simple UI for what I had. It was painful, despite having plenty of ideas, trying to get the AI to remember what it did right previously and not mess it up was unbelievably painful! In anycase, after 4 days of battling Gemini and constantly remininding what code worked and what didn't and arguing with it on its logic, we finally managed to get this out.
+ISC has moved to KEA DHCP and has their own UI, but didn't really meet what I needed and I still had multiple installations running off isc-dhcp-server. I didn't like [Akkadius/glass-isc-dhcp](https://github.com/Akkadius/glass-isc-dhcp) and so I decided to make use of AI to vibe code a simple UI for what I had. It was painful, despite having plenty of ideas, trying to get the AI to remember what it did right previously and not mess it up was unbelievably painful! In anycase, after 4 days of battling Gemini and constantly remininding what code worked and what didn't and arguing with it on its logic, we finally managed to get this out.
 
 I call it v1.08 but its more like 1.188 after all the back and forth.
 
