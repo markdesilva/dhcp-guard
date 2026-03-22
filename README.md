@@ -64,5 +64,81 @@ python3 -m venv venv
 source venv/bin/activate
 pip install fastapi uvicorn httpx uvicorn websockets aiosqlite pydantic install "bcrypt==4.0.1"
 ```
-  
+
+### Webserver config
+#### Apache
++ Enable the mods (if not already enabled)
+```
+a2enmod ssl proxy_wstunnel rewrite proxy proxy_http rewrite headers
+systemctl restart apache2
+```
++ Create the config file /etc/apache2/sites-available/dhcp-guard-ssl.conf
++ Add the following and save the file
+```
+<VirtualHost *:443>
+    ServerName your.server.fqdn
+    DocumentRoot /opt/dhcp-guard
+
+    SSLEngine on
+    SSLCertificateFile /path/to/your/certificate.crt
+    SSLCertificateKeyFile /path/to/your/private.key
+    # If using a CA bundle, uncomment below:
+    # SSLCertificateChainFile /path/to/your/chainfile.pem
+
+    <Directory /opt/dhcp-guard>
+        Options FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+
+    <Proxy *>
+        Require all granted
+    </Proxy>
+
+    ProxyPreserveHost On
+    RewriteEngine On
+
+    RewriteCond %{HTTP:Upgrade} websocket [NC]
+    RewriteCond %{Connection} upgrade [NC]
+    RewriteRule ^/ws/logs(.*) ws://127.0.0.1:8000/ws/logs$1 [P,L]
+
+    ProxyPass /ws/logs ws://127.0.0.1:8000/ws/logs
+    ProxyPassReverse /ws/logs ws://127.0.0.1:8000/ws/logs
+
+    ProxyPass /api http://127.0.0.1:8000/api
+    ProxyPassReverse /api http://127.0.0.1:8000/api
+
+    ProxyPass / http://127.0.0.1:8000/
+    ProxyPassReverse / http://127.0.0.1:8000/
+
+    # Security Headers (Optional but Recommended)
+    Header always set Strict-Transport-Security "max-age=63072000"
+</VirtualHost>
+```
+
+### Creating a startup service
++ Edit /etc/systemd/system/dhcp-guard.service
++ Add the following and save the file
+```
+  [Unit]
+Description=DHCP Guard Web UI Backend
+After=network.target isc-dhcp-server.service
+
+[Service]
+User=root
+WorkingDirectory=/opt/dhcp-guard
+ExecStart=/opt/dhcp-guard/venv/bin/python3 main.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
++ Restart the systemd daemon
+```
+systemctl daemon-reload
+systemctl enable dhcp-guard
+systemctl start dhcp-guard
+```
+
+
 TO BE CONTINUED
