@@ -1,5 +1,5 @@
 # DHCP-GUARD
-Vibe coded (and heavly human edited) Web-Based Management for ISC-DHCP-Server for fixed IP client reservations.
+Vibe coded (and heavly human edited) Web-Based Management for ISC-DHCP-Server for leased and fixed IP client reservations.
 
 ## History
 ISC has moved to KEA DHCP and has their own UI, but didn't really meet what I needed and I still had multiple installations running off isc-dhcp-server. [Akkadius/glass-isc-dhcp](https://github.com/Akkadius/glass-isc-dhcp) while rich in features, didn't manage fixed IP reservations. We make users register their machines for DHCP, so fixed IP client reservations were a must and hence I decided to make use of AI to vibe code a simple UI for what I needed. 
@@ -9,7 +9,7 @@ Despite having plenty of ideas, trying to get the AI to remember what it did rig
 I call it v1.10 but its more like 1.1000 after all the back and forth.
 
 ## Description
-DHCP Guard is a modern, lightweight FastAPI application designed to provide a real-time dashboard and management interface for the Linux isc-dhcp-server for fixed IP client reservations. 
+DHCP Guard is a modern, lightweight FastAPI application designed to provide a real-time dashboard and management interface for the Linux isc-dhcp-server for leased and fixed IP client reservations. 
 
 It features live log streaming via WebSockets, device latency monitoring, and secure static host registration.
 
@@ -318,7 +318,7 @@ password: password
 
 
 + The *Network Segments* will show you your Shared Network and the *Subnets* as defined in your /etc/dhcp/dhcpd.conf.
-+ Clicking on the *Subnets* will show tiles of all the fixed IP clients defined in that segment - tiles can be sorted by hostname or IP.
++ Clicking on the *Subnets* will show tiles of all the leased and fixed IP clients defined in that segment (status icon will be either a green *LEASED* or blue *STATIC* icon)- tiles can be sorted by hostname or IP.
 + Each tile will show the hostname, IP and MAC address of the client
 + A ping graph for the client is also availabe when clicking on the area of the tile above the *Details* footer.
 + The ping graph is static, you have to click on the *Subnet* again
@@ -363,6 +363,4 @@ password: password
 + The ping timing db is auto generated, if you lose the db file, it will regenerate
 
 ### TO DO
-+ Show leased clients in the tiles, not just fixed IP reservation clients
-+ Make the ping graph update without refreshing the page
-+ Allow user to navigate historical ping graph data for the clients
++ Make the ping graph update without refreshing the page (non priority target)
