@@ -2,7 +2,7 @@
 Vibe coded (and heavly human edited) Web-Based Management for ISC-DHCP-Server
 
 ## History
-ISC has moved to KEA DHCP and has their own UI, but didn't really meet what I needed and I still had multiple installations running off isc-dhcp-server. I didn't like [Akkadius/glass-isc-dhcp](https://github.com/Akkadius/glass-isc-dhcp) and so I decided to make use of AI to vibe code a simple UI for what I had. 
+ISC has moved to KEA DHCP and has their own UI, but didn't really meet what I needed and I still had multiple installations running off isc-dhcp-server. [Akkadius/glass-isc-dhcp](https://github.com/Akkadius/glass-isc-dhcp) while rich in features, didn't manage fixed IP reservations and so I decided to make use of AI to vibe code a simple UI for what I had. 
 
 Despite having plenty of ideas, trying to get the AI to remember what it did right previously and not mess it up was unbelievably painful! In anycase, after 4 days of battling Gemini and constantly remininding it what code worked and what didn't and arguing with it on its logic and it refusing to accept my code as correct, we finally managed to get this out.
 
@@ -281,11 +281,46 @@ systemctl start dhcp-guard
 ```
 
 + Open a browser and navigate to https://your.server.fqdn (add the :port if you changed the port numbers)
+
+<img width="512" height="503" alt="image" src="https://github.com/user-attachments/assets/3f6a4c0d-0eeb-4404-af36-72925f1182be" />
+
 + The default login credentials are
 ```
 userid: admin
 password: password
 ```
+
+<img width="1487" height="894" alt="dg-live_activity" src="https://github.com/user-attachments/assets/26c401e0-942c-4107-bea6-ac204ffd87f9" />
+
+
 + Go to *Admin -> Settings* in the side panel and change the password for the admin user and add other users if you want.
 
-TO BE CONTINUED
++ The *Live View* shows a live stream of the dhcpd.logs, color coded for easier visibility for DHCPREQUEST, DHCPACK, DHCPDISCOVER and general messages.
++ The *Network Segments* will show you your Shared Network and the *Subnets* as defined in your /etc/dhcp/dhcpd.conf.
++ Clicking on the *Subnets* will show tiles of all the fixed IP clients defined in that segment - tiles can be sorted by hostname or IP.
++ Each tile will show the hostname, IP and MAC address of the client
++ A ping graph for the client is also availabe when clicking on the area of the tile above the *Details* footer.
+  
+<img width="1474" height="509" alt="dg-networksegments" src="https://github.com/user-attachments/assets/dfc960fa-84e1-45e0-a8f0-a7a4ef60872b" />
+
++ Clicking on the *Details* footer at the base of the tile will pull up a form which you can add information for the clients (Description, Admin, Comments) - this information is saved seperately from the dhcp conf files.
++ The trash can icon in the form can be used to delete the host completely from the dhcp conf files and all information assigned to the host - USE WITH CAUTION!
+
+<img width="422" height="496" alt="image" src="https://github.com/user-attachments/assets/efd03ac4-0f5a-4fd8-a7cc-b8c3cc011315" />
+
++ Under *Admin -> Add Host* the user can add a host to either the main dhcpd.conf file or any of the include conf files.
+
+<img width="553" height="591" alt="dg-addhost" src="https://github.com/user-attachments/assets/b01af275-584f-44d2-bfb5-85a63974199e" />
+
++ You can select the hostname field and click on it to reveal all fixed IP hosts and selecting them will auto populate the other fields.
++ Trying to save the same hostname, IP or MAC in a different file will inform the user of a conflict and which file the conflict exists in.
++ Changes to hostname, IP or MAC while keeping the other fields the same will be treated as an 'update'.
++ Under *Admin -> Settings* you can add a new admin user or change the password for any of the created users.
+
+<img width="935" height="336" alt="image" src="https://github.com/user-attachments/assets/a6fb9387-accb-4e8c-8469-a0627d7c0830" />
+
++ Click on *Admin -> Sign Out* to log out - you will be prompted to confirm the log out.
+
+### Files 
++ The ping user credentials, timing information and client descriptions/information are stored in SQLite databases in /opt/dhcp-guard 
+
