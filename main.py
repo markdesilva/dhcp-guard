@@ -227,7 +227,9 @@ async def get_config_schema():
                 for net, mask, start, end in subnet_matches:
                     subnets.append({"network": net, "range": f"{start} - {end}", "prefix": ".".join(start.split('.')[:3]) + "."})
                 include_paths = re.findall(r'include\s+"/etc/dhcp/dhcpd-pools/([^"]+)";', content)
-                active_includes = sorted(list(set(include_paths)))
+                # active_includes = sorted(list(set(include_paths)))
+                raw_includes = re.findall(r'include\s+"/etc/dhcp/dhcpd-pools/([^"]+)";', content)
+                active_includes = sorted(list(set(inc for inc in raw_includes if inc.endswith('.conf'))))
     finally:
         if os.path.exists(temp_path): os.remove(temp_path)
     return {"subnets": subnets, "includes": active_includes}

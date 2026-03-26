@@ -660,37 +660,49 @@ function switchLogStream(type, el) {
     currentLogSocket.onmessage = (e) => {
         const container = document.getElementById('log-content');
         const win = document.getElementById('log-window');
-        const line = document.createElement('div');
         
-        // Removed 'text-xs' so + and - buttons work again
-        line.className = "log-line py-1.5 px-2 font-mono border-b border-white/5";
+        // 1. Split the incoming payload into an array of lines
+        let rawLines = e.data.split('\n');
         
-        let rawText = e.data;
-        let formattedText = rawText;
-
-        if (type === 'logs') {
-            if (rawText.includes('DHCPACK') || rawText.includes('DHCPREQUEST')) {
-                formattedText = `<span class="text-sky-300 font-bold">${rawText}</span>`;
-            } else if (rawText.includes('DHCPDISCOVER')) {
-                formattedText = `<span class="text-orange-300 font-bold">${rawText}</span>`;
-            } else {
-                formattedText = `<span class="text-slate-300">${rawText}</span>`;
-            }
-        } else {
-            // Emerald Green for Leases
-            formattedText = `<span class="text-emerald-400">${rawText}</span>`;
+        // 2. Remove the trailing empty string if the payload ends with a newline
+        if (rawLines.length > 0 && rawLines[rawLines.length - 1] === '') {
+            rawLines.pop();
         }
 
-        // Changed prefix back to $
-        line.innerHTML = `<span class="opacity-30 mr-2">$</span>` + formattedText;
-        
-        container.appendChild(line);
-        
-        // Ensure new line respects current font size setting
-        line.style.fontSize = logFontSize + 'px';
+        // 3. Process each line individually
+        rawLines.forEach(rawText => {
+            const line = document.createElement('div');
+            
+            // Added 'whitespace-pre-wrap' to natively preserve spaces and line breaks
+            line.className = "log-line py-1.5 px-2 font-mono border-b border-white/5 whitespace-pre-wrap";
+            
+            let formattedText = rawText;
+
+            if (type === 'logs') {
+                if (rawText.includes('DHCPACK') || rawText.includes('DHCPREQUEST')) {
+                    formattedText = `<span class="text-sky-300 font-bold">${rawText}</span>`;
+                } else if (rawText.includes('DHCPDISCOVER')) {
+                    formattedText = `<span class="text-orange-300 font-bold">${rawText}</span>`;
+                } else {
+                    formattedText = `<span class="text-slate-300">${rawText}</span>`;
+                }
+            } else {
+                // Emerald Green for Leases
+                formattedText = `<span class="text-emerald-400">${rawText}</span>`;
+            }
+
+            line.innerHTML = `<span class="opacity-30 mr-2">$</span>` + formattedText;
+            container.appendChild(line);
+            
+            // Respect current font size
+            if (typeof currentFontSize !== 'undefined') {
+                line.style.fontSize = currentFontSize + 'px';
+            }
+        });
         
         win.scrollTop = win.scrollHeight;
     };
+
 }       
         async function controlService(a) { 
             await fetch(`/api/service/${a}`, { method: 'POST' });
