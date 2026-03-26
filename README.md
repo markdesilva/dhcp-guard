@@ -1,3 +1,10 @@
+# UPDATES (26th March 2026)
++ Added live stream for /var/lib/dhcp/dhcpd.leases under 'Live Activity' (new side panel entries)
++ Added sort tiles by live hosts to 'Network Segments' subnets 
++ Changed "Static Registration" to "Static Registration/Modification" under 'Add Host'
++ Changed "Systems Administration" to "User Administration" under 'Settings'
+
+
 # DHCP-GUARD
 Vibe coded (and heavly human edited) Web-Based Management for ISC-DHCP-Server for leased and fixed IP client reservations.
 
@@ -84,10 +91,8 @@ systemctl restart apache2
     DocumentRoot /opt/dhcp-guard
 
     SSLEngine on
-    SSLCertificateFile /path/to/your/certificate.crt
-    SSLCertificateKeyFile /path/to/your/private.key
-    # If using a CA bundle, uncomment below:
-    # SSLCertificateChainFile /path/to/your/chainfile.pem
+    SSLCertificateFile </full/path/to/your/certfile>
+    SSLCertificateKeyFile </full/path/to/your/keyfile>
 
     <Directory /opt/dhcp-guard>
         Options FollowSymLinks
@@ -95,19 +100,18 @@ systemctl restart apache2
         Require all granted
     </Directory>
 
-    <Proxy *>
-        Require all granted
-    </Proxy>
-
     ProxyPreserveHost On
-    RewriteEngine On
 
-    RewriteCond %{HTTP:Upgrade} websocket [NC]
-    RewriteCond %{Connection} upgrade [NC]
-    RewriteRule ^/ws/logs(.*) ws://127.0.0.1:8000/ws/logs$1 [P,L]
+    # We use Location blocks to ensure the Upgrade header is handled correctly
+    <Location /ws/logs>
+        ProxyPass ws://127.0.0.1:8000/ws/logs
+        ProxyPassReverse ws://127.0.0.1:8000/ws/logs
+    </Location>
 
-    ProxyPass /ws/logs ws://127.0.0.1:8000/ws/logs
-    ProxyPassReverse /ws/logs ws://127.0.0.1:8000/ws/logs
+    <Location /ws/leases>
+        ProxyPass ws://127.0.0.1:8000/ws/leases
+        ProxyPassReverse ws://127.0.0.1:8000/ws/leases
+    </Location>
 
     ProxyPass /api http://127.0.0.1:8000/api
     ProxyPassReverse /api http://127.0.0.1:8000/api
@@ -115,9 +119,11 @@ systemctl restart apache2
     ProxyPass / http://127.0.0.1:8000/
     ProxyPassReverse / http://127.0.0.1:8000/
 
-    # Security Headers (Optional but Recommended)
     Header always set Strict-Transport-Security "max-age=63072000"
+
+    RequestHeader set X-Forwarded-Proto "https"
 </VirtualHost>
+
 ```
 + Link the file to /etc/apache2/sites-enabled
 ```
@@ -128,47 +134,49 @@ ln -s ../sites-available/dhcp-guard-ssl.conf .
 #### NGINX
 + Create the config file /etc/nginx/sites-available/dhcp-guard-ssl
 + Add the following and save the file
-```server {
+```
+server {
     listen 443 ssl;
     server_name your.server.fqdn;
 
-    root /opt/dhcp-guard;
+    ssl_certificate /full/path/to/your/certfile;
+    ssl_certificate_key /full/path/to/your/keyfile;
 
-    # SSL Configuration
-    ssl_certificate /path/to/your/certificate.crt;
-    ssl_certificate_key /path/to/your/private.key;
-    # If you have a chain file, Nginx expects it concatenated inside the .crt file
-    # or you can use ssl_trusted_certificate /path/to/your/chainfile.pem;
-
-    # Security Headers
     add_header Strict-Transport-Security "max-age=63072000" always;
 
-    # Global Proxy Settings
+    root /opt/dhcp-guard;
+
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Proto https;
 
-    # WebSocket Proxy (Rewrite and ProxyPass replacement)
     location /ws/logs {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8000/ws/logs;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "Upgrade";
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400; 
     }
 
-    # API Proxy
-    location /api {
-        proxy_pass http://127.0.0.1:8000;
+    location /ws/leases {
+        proxy_pass http://127.0.0.1:8000/ws/leases;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400;
     }
 
-    # Main Application Proxy (Root)
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/api/;
+    }
+
     location / {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8000/;
     }
 }
 ```
-+ Link the file to /etc/apache2/sites-enabled
++ Link the file to /etc/nginx/sites-enabled
 ```
 cd /etc/nginx/sites-enabled
 ln -s ../sites-available/dhcp-guard-ssl .
