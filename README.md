@@ -378,9 +378,8 @@ password: password
 + Clicking on the *Subnets* will show tiles of all the leased and fixed IP clients defined in that segment (status icon will be either a green *LEASED* or blue *STATIC* icon)- tiles can be sorted by hostname or IP.
 + Each tile will show the hostname, IP and MAC address of the client
 + A ping graph for the client is also availabe when clicking on the area of the tile above the *Details* footer.
-+ The ping graph is static, you have to click on the *Subnet* again
 + The ping graph is for a fixed time period of 2 hours (ping is done every 5 minutes from when the session starts) - there is no historical data
-
++ The ping graph is static, you have to click on the *Subnet* again to refresh the graph
   
 <img width="1474" height="509" alt="dg-networksegments" src="https://github.com/user-attachments/assets/dfc960fa-84e1-45e0-a8f0-a7a4ef60872b" />
 
