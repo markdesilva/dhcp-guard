@@ -331,12 +331,16 @@ systemctl start dhcp-guard
 cd /opt/dhcp-guard
 source ./venv/bin/activate
 ```
-+ You will be in the python virtual environment, then do
++ You will be in the python virtual environment (your CLI prompt will be prefixed with a '(venv)'), then do
 ```
 python3 main.py
 ```
 + This is especially good for testing changes you make to the code on your own
 + To exit the CLI run mode, do CTRL-C **TWICE**
++ To exit the python virtual environment do
+```
+deactivate
+```
 + To access the web-ui, open a browser and navigate to https://your.server.fqdn (add the :port if you changed the port numbers)
 
 
