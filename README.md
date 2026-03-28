@@ -61,8 +61,20 @@ It features live log streaming via WebSockets, device latency monitoring, and se
 
 ## Installation
 ### Setting up RSyslog
++ Edit /etc/rsyslog.d/dhcpd.log
++ Add the following and save the file
 ```
-echo "local7.* /var/log/dhcpd.log" > /etc/rsyslog.d/dhcpd.log
+# This 'if' check catches the message by either its ID or its Facility
+if ($programname == 'dhcpd' or $syslogfacility-text == 'local7') then {
+    action(type="omfile" file="/var/log/dhcpd.log")
+    
+    # This is the "Magic Ingredient" that prevents duplicates:
+    stop
+}
+```
++ Note: If you still want the dhcp logs to go to syslog as well, comment out the 'stop'
++ Do the following
+```
 echo "log-facility local7;" >> /etc/dhcp/dhcpd.conf
 systemctl restart rsyslog
 systemctl restart isc-dhcp-server
