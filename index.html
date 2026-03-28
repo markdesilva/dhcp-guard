@@ -472,9 +472,14 @@
         }
 
 
-async function loadSubnet(sub, navEl) {
+async function loadSubnet(sub, navEl, isBackgroundRefresh = false) {
     const grid = document.getElementById('tile-grid');
-    if (grid) grid.innerHTML = '';
+    
+    // If the user manually clicked a network, clear the grid immediately so old tiles don't linger.
+    // If it's the 10-second timer, skip this to prevent the flashing!
+    if (grid && !isBackgroundRefresh) {
+        grid.innerHTML = ''; 
+    }
 
     activeSubnetData = { sub, navEl };
     switchTab('tiles', navEl);
@@ -483,9 +488,7 @@ async function loadSubnet(sub, navEl) {
     const data = await res.json();
 
     const detailsSection = document.getElementById('details-section');
-    
     if (detailsSection) detailsSection.classList.remove('hidden');
-    grid.innerHTML = '';
 
     const startLimit = parseInt(sub.range.split(' - ')[0].split('.').pop());
     const endLimit = parseInt(sub.range.split(' - ')[1].split('.').pop());
@@ -510,6 +513,8 @@ async function loadSubnet(sub, navEl) {
             return nameA.localeCompare(nameB);
         }
     });
+
+    const fragment = document.createDocumentFragment();
 
     filtered.forEach((item, index) => {
         const color = item.status === 'online' ? 'bg-emerald-500' : 'bg-red-500';
@@ -537,14 +542,19 @@ async function loadSubnet(sub, navEl) {
                 </div>
                 <div id="hover-${item.mac.replace(/:/g,'')}" class="details-tooltip group-hover/footer:visible">Loading...</div>
             </div>`;
-        grid.appendChild(div);
+        
+        fragment.appendChild(div);
         fetchDetailsForHover(item.mac);
-        if(index === 0) updateHeroChart(item.ip, div);
+        if(index === 0 && !isBackgroundRefresh) updateHeroChart(item.ip, div);
     });
+
+    if (grid) {
+        grid.innerHTML = '';
+        grid.appendChild(fragment);
+    }
 
     if (typeof updateLeaseCountdowns === "function") updateLeaseCountdowns();
 }
-
 
         async function fetchDetailsForHover(mac) {
             const res = await fetch(`/api/get-details/${mac}`);
@@ -874,6 +884,46 @@ window.onload = async () => {
         //switchLogStream('logs', document.getElementById('default-nav'));
     }
 };
+
+
+// --- AUTO REFRESH LOGIC ---
+
+// 1. Auto-refresh Subnet tiles every 10 seconds
+setInterval(async () => {
+    const viewTiles = document.getElementById('view-tiles');
+    
+    if (!viewTiles.classList.contains('hidden') && activeSubnetData) {
+        const currentIp = document.getElementById('hero-graph-ip').innerText;
+        
+        const originalUpdate = updateHeroChart;
+        updateHeroChart = function() {}; 
+        
+        // ADDED 'true' HERE to tell the function this is a background refresh!
+        await loadSubnet(activeSubnetData.sub, activeSubnetData.navEl, true);
+        
+        updateHeroChart = originalUpdate;
+        
+        if (currentIp && currentIp !== 'Select Device') {
+            document.querySelectorAll('.device-tile').forEach(tile => {
+                if (tile.innerText.includes(currentIp)) {
+                    tile.classList.add('tile-active');
+                }
+            });
+        }
+    }
+}, 10000);
+
+// 2. Auto-refresh the ping graph every 5 minutes
+setInterval(() => {
+    const currentIp = document.getElementById('hero-graph-ip').innerText;
+    
+    if (currentIp && currentIp !== 'Select Device') {
+        const activeTile = document.querySelector('.device-tile.tile-active');
+        // This triggers your existing fetch to /api/ping-history and gracefully redraws the chart
+        updateHeroChart(currentIp, activeTile);
+    }
+}, 300000);
+
 
     </script>
 </body>
