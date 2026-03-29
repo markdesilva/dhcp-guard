@@ -116,15 +116,26 @@ def scan_for_conflicts(hostname, mac, ip):
     for file_path in get_all_config_files():
         if not os.path.exists(file_path): continue
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
-                blocks = re.findall(r'host\s+([^\s\{]+)\s*\{[^}]*hardware\s+ethernet\s+([0-9a-fA-F:]+);[^}]*fixed-address\s+([0-9.]+);', content, re.IGNORECASE | re.DOTALL)
-                for h_name, h_mac, h_ip in blocks:
-                    h_mac = h_mac.lower()
-                    if h_name == hostname: return True, file_path, "HOSTNAME", h_name
+                clean_content = re.sub(r'#.*', '', content)
+                
+                blocks = re.findall(r'host\s+(["\']?[^\s\{]+["\']?)\s*\{([^}]+)\}', clean_content, re.IGNORECASE)
+                for name, block_data in blocks:
+                    clean_name = name.strip('"\'')
+                    
+                    # Loosened extraction to handle single-line setups seamlessly
+                    mac_match = re.search(r'hardware\s+ethernet\s+([0-9a-fA-F:]+)', block_data, re.IGNORECASE)
+                    ip_match = re.search(r'fixed-address\s+([0-9.]+)', block_data, re.IGNORECASE)
+                    
+                    h_mac = mac_match.group(1).lower() if mac_match else ""
+                    h_ip = ip_match.group(1) if ip_match else ""
+                    
+                    if clean_name == hostname: return True, file_path, "HOSTNAME", clean_name
                     if h_mac == mac: return True, file_path, "MAC", h_mac
                     if h_ip == ip: return True, file_path, "IP", h_ip
-        except: pass
+        except Exception as e:
+            print(f"Error scanning conflicts in {file_path}: {e}")
     return False, None, None, None
 
 def parse_dhcp_configs(main_path):
@@ -135,17 +146,34 @@ def parse_dhcp_configs(main_path):
         current_file = files_to_read.pop()
         if current_file in processed_files or not os.path.exists(current_file): continue
         try:
-            with open(current_file, 'r') as f:
-                content = re.sub(r'#.*', '', f.read())
-                includes = re.findall(r'include\s+"?([^";]+)"?;', content)
+            with open(current_file, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+                clean_content = re.sub(r'#.*', '', content)
+                
+                includes = re.findall(r'include\s+"?([^";]+)"?;', clean_content)
                 for inc in includes:
                     if "*" in inc: files_to_read.extend(glob.glob(inc))
                     else: files_to_read.append(inc)
-                matches = re.findall(r'host\s+([^\s\{]+)\s*\{[^}]*hardware\s+ethernet\s+([0-9a-fA-F:]+);[^}]*fixed-address\s+([0-9.]+);', content, re.IGNORECASE | re.DOTALL)
-                for m in matches:
-                    hosts.append({"name": m[0], "mac": m[1].lower(), "ip": m[2], "source": os.path.basename(current_file)})
-        except: pass
+                
+                blocks = re.findall(r'host\s+(["\']?[^\s\{]+["\']?)\s*\{([^}]+)\}', clean_content, re.IGNORECASE)
+                for name, block_data in blocks:
+                    clean_name = name.strip('"\'')
+                    
+                    mac_match = re.search(r'hardware\s+ethernet\s+([0-9a-fA-F:]+)', block_data, re.IGNORECASE)
+                    ip_match = re.search(r'fixed-address\s+([0-9.]+)', block_data, re.IGNORECASE)
+                    
+                    if mac_match and ip_match:
+                        hosts.append({
+                            "name": clean_name, 
+                            "mac": mac_match.group(1).lower(), 
+                            "ip": ip_match.group(1), 
+                            "source": os.path.basename(current_file)
+                        })
+        except Exception as e: 
+            print(f"Error parsing {current_file}: {e}")
+            
         processed_files.add(current_file)
+        
     return hosts
 
 def get_live_leases():
@@ -188,7 +216,6 @@ def get_active_leases(filepath):
             for line in f:
                 line = line.strip()
                 if line.startswith("lease "):
-                    # .split() without arguments handles tabs and multiple spaces automatically
                     current_ip = line.split()[1]
                     current_lease = {
                         "ip": current_ip, 
@@ -207,7 +234,6 @@ def get_active_leases(filepath):
                         current_lease["hostname"] = parts[1].strip('";')
                 elif line.startswith("ends "): 
                     parts = line.split()
-                    # parts will cleanly be: ['ends', '4', '2026/03/26', '23:10:15;']
                     if len(parts) >= 4:
                         current_lease["ends"] = f"{parts[2]} {parts[3].strip(';')}"
                 elif line == "}":
@@ -218,6 +244,48 @@ def get_active_leases(filepath):
         pass
 
     return [lease for lease in active_by_mac.values() if lease["state"] == "active"]
+
+def modify_host_block(content: str, hostname: str, new_block: str = None) -> tuple[str, bool]:
+    """
+    Safely removes or replaces a host block by parsing { and } line-by-line.
+    It ignores braces found inside # comments, preventing syntax corruption.
+    """
+    lines = content.split('\n')
+    new_lines = []
+    in_target = False
+    brace_count = 0
+    found = False
+    
+    # Matches the start of the block: (spaces) host (hostname) {
+    start_regex = re.compile(r'^[ \t]*host\s+(["\']?' + re.escape(hostname) + r'["\']?)\s*\{', re.IGNORECASE)
+    
+    for line in lines:
+        if not in_target:
+            if not line.lstrip().startswith('#') and start_regex.search(line):
+                in_target = True
+                found = True
+                code_part = line.split('#')[0]
+                brace_count += code_part.count('{')
+                brace_count -= code_part.count('}')
+                
+                if brace_count <= 0:
+                    in_target = False
+                    if new_block:
+                        new_lines.append(new_block)
+            else:
+                new_lines.append(line)
+        else:
+            code_part = line.split('#')[0]
+            brace_count += code_part.count('{')
+            brace_count -= code_part.count('}')
+            
+            if brace_count <= 0:
+                in_target = False
+                if new_block:
+                    new_lines.append(new_block.strip("\n"))
+                    new_block = None 
+                    
+    return '\n'.join(new_lines), found
 
 # --- AUTHENTICATION ROUTES ---
 @app.post("/api/login")
@@ -284,8 +352,6 @@ async def get_config_schema():
                 subnet_matches = re.findall(r"subnet\s+(\d+\.\d+\.\d+\.\d+)\s+netmask\s+(\d+\.\d+\.\d+\.\d+)\s*\{.*?range\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+);", content, re.DOTALL)
                 for net, mask, start, end in subnet_matches:
                     subnets.append({"network": net, "range": f"{start} - {end}", "prefix": ".".join(start.split('.')[:3]) + "."})
-                include_paths = re.findall(r'include\s+"/etc/dhcp/dhcpd-pools/([^"]+)";', content)
-                # active_includes = sorted(list(set(include_paths)))
                 raw_includes = re.findall(r'include\s+"/etc/dhcp/dhcpd-pools/([^"]+)";', content)
                 active_includes = sorted(list(set(inc for inc in raw_includes if inc.endswith('.conf'))))
     finally:
@@ -334,11 +400,9 @@ async def service_control(action: str):
         return {"status": "success", "message": f"DHCP service {action}ed"}
     except Exception as e: return {"status": "error", "message": str(e)}
 
-# --- NEW: DHCP SERVICE STATUS CHECK ---
 @app.get("/api/service/status")
 async def get_service_status():
     try:
-        # We use check_call style to see if service is active
         result = subprocess.run(["systemctl", "is-active", "isc-dhcp-server"], capture_output=True, text=True)
         is_active = result.stdout.strip() == "active"
         return {"active": is_active}
@@ -357,25 +421,31 @@ async def add_host(res: NewReservation):
     exists, source_path, m_type, m_val = scan_for_conflicts(res.hostname, res.mac, res.ip)
     target_path = MAIN_CONF if res.target == "main" else os.path.join(POOL_DIR, res.target)
 
+    # The new block we want to write
+    block = f"\nhost {res.hostname} {{\n  hardware ethernet {res.mac.lower()};\n  fixed-address {res.ip};\n}}"
+
     if exists:
         source_name = os.path.basename(source_path)
         if source_name != (res.target if res.target=="main" else res.target):
             return {"status": "error", "message": f"CONFLICT: {m_type} ({m_val}) exists in {source_name}"}
 
-        with open(source_path, 'r') as f:
+        with open(source_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
-            if f"host {res.hostname}" in content:
-                pattern = r'\n?host\s+' + re.escape(res.hostname) + r'\s*\{.*?\n\}'
-                content = re.sub(pattern, '', content, flags=re.DOTALL)
-                block = f"\nhost {res.hostname} {{\n  hardware ethernet {res.mac.lower()};\n  fixed-address {res.ip};\n}}\n"
-                with open(source_path, 'w') as f: f.write(content.strip() + "\n" + block)
-                os.system("sudo systemctl restart isc-dhcp-server")
-                return {"status": "success", "message": f"Updated {res.hostname} in {source_name}"}
-            else:
-                return {"status": "error", "message": f"CONFLICT: {m_type} ({m_val}) already exists in {source_name}"}
+            
+        # Use our safe parser to replace the old block with the new block
+        new_content, found = modify_host_block(content, res.hostname, new_block=block)
+        
+        if found:
+            with open(source_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            os.system("sudo systemctl restart isc-dhcp-server")
+            return {"status": "success", "message": f"Updated {res.hostname} in {source_name}"}
+        else:
+            return {"status": "error", "message": f"CONFLICT: {m_type} ({m_val}) already exists in {source_name}"}
 
-    block = f"\nhost {res.hostname} {{\n  hardware ethernet {res.mac.lower()};\n  fixed-address {res.ip};\n}}\n"
-    with open(target_path, "a") as f: f.write(block)
+    # If it's a completely new host, append it to the bottom
+    with open(target_path, "a", encoding='utf-8') as f: 
+        f.write(f"{block}\n")
     os.system("sudo systemctl restart isc-dhcp-server")
     return {"status": "success", "message": "Host successfully registered!"}
 
@@ -384,14 +454,18 @@ async def delete_host(hostname: str):
     found = False
     for file_path in get_all_config_files():
         if not os.path.exists(file_path): continue
-        with open(file_path, 'r') as f:
+        
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
-        pattern = r'\n?host\s+' + re.escape(hostname) + r'\s*\{.*?\n\}'
-        if re.search(pattern, content, flags=re.DOTALL):
-            new_content = re.sub(pattern, '', content, flags=re.DOTALL)
-            with open(file_path, 'w') as f:
-                f.write(new_content.strip() + "\n")
+            
+        # Use our safe parser to delete the block (new_block is None by default)
+        new_content, block_found = modify_host_block(content, hostname)
+        
+        if block_found:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
             found = True
+            
     if found:
         os.system("sudo systemctl restart isc-dhcp-server")
         return {"status": "success", "message": f"Deleted {hostname} and restarted service"}
@@ -403,7 +477,6 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             try:
-                # Get the current file's unique ID (inode)
                 current_ino = os.stat(LOG_FILE).st_ino
                 with open(LOG_FILE, "r") as f:
                     f.seek(0, os.SEEK_END)
@@ -413,11 +486,10 @@ async def websocket_endpoint(websocket: WebSocket):
                             await websocket.send_text(line)
                         else: 
                             await asyncio.sleep(0.5)
-                            # Check if syslog rotated the file behind our back
                             if os.stat(LOG_FILE).st_ino != current_ino:
-                                break # Break inner loop to reopen the new file
+                                break 
             except FileNotFoundError:
-                await asyncio.sleep(0.5) # File is mid-rotation, wait half a sec
+                await asyncio.sleep(0.5) 
     except Exception:
         pass
 
@@ -425,7 +497,6 @@ async def websocket_endpoint(websocket: WebSocket):
 async def websocket_leases_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
-        # Initial load: Send current content so the window isn't empty
         try:
             with open(LEASES_FILE, "r") as f:
                 content = f.read()
@@ -436,7 +507,6 @@ async def websocket_leases_endpoint(websocket: WebSocket):
 
         while True:
             try:
-                # Track the starting inode
                 current_ino = os.stat(LEASES_FILE).st_ino
                 
                 with open(LEASES_FILE, "r") as f:
@@ -448,24 +518,16 @@ async def websocket_leases_endpoint(websocket: WebSocket):
                         else: 
                             await asyncio.sleep(1)
                             
-                            # Grab fresh file stats
                             current_stats = os.stat(LEASES_FILE)
                             
-                            # TRIGGER REFRESH IF:
-                            # 1. Inode changed (DHCP daemon swapped the file)
-                            # 2. File size is smaller than our cursor (Human truncated/copied over it)
                             if current_stats.st_ino != current_ino or current_stats.st_size < f.tell():
-                                
-                                # Clear the screen
                                 await websocket.send_text("__CLEAR_STREAM__")
                                 
-                                # Instantly dump the new file
                                 with open(LEASES_FILE, "r") as new_f:
                                     new_content = new_f.read()
                                     if new_content:
                                         await websocket.send_text(new_content)
                                         
-                                # Break inner loop to update the tracked inode and reset the cursor
                                 break 
             except FileNotFoundError:
                 await asyncio.sleep(1)
@@ -476,28 +538,19 @@ async def websocket_leases_endpoint(websocket: WebSocket):
 async def websocket_tiles_endpoint(websocket: WebSocket):
     await websocket.accept()
     try:
-        # 1. Instantly parse and send the active leases on connection
         await websocket.send_json(get_active_leases(LEASES_FILE))
-        
-        # Track initial file state
         try:
             current_ino = os.stat(LEASES_FILE).st_ino
             current_size = os.stat(LEASES_FILE).st_size
         except FileNotFoundError:
             current_ino, current_size = 0, 0
 
-        # 2. Watch for file changes
         while True:
             await asyncio.sleep(1) 
             try:
                 stats = os.stat(LEASES_FILE)
-                # If daemon swapped file (inode changed) or appended new leases (size changed)
                 if stats.st_ino != current_ino or stats.st_size != current_size:
-                    
-                    # Send fresh JSON
                     await websocket.send_json(get_active_leases(LEASES_FILE))
-                    
-                    # Update trackers
                     current_ino = stats.st_ino
                     current_size = stats.st_size
             except FileNotFoundError:
