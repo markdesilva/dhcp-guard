@@ -1,7 +1,24 @@
 # UPDATES (29th March 2026)
 + Tiles and ping graph update dynamically and seamlessly without updating or refreshing the whole page
 + If new dynamic clients get an ip, the tiles will added to the grid, for static leases, the status icon will change from red to green
-+ Ping graph updates every 5 minutes, tiles check for refresh every 10 seconds
++ Ping graph updates every 5 minutes, tiles will check for changes and refresh every 10 seconds
++ For the ping graph, if you  want finer granularity over a shorter window (eg: ping every minute, show graph over a 30 minute window) you can make these changes
+
+**main.py**
+```
+ping_scheduler()
+await asyncio.sleep(300) -> await asyncio.sleep(60)
+
+get_ping_history(ip)
+timedelta(hours=2) -> timedelta(minutes=30)
+```
+
+**index.html**
+```
+Just before the </script> tag
+}, 300000); -> }, 60000);
+```
+
 
 # UPDATES (27th March 2026)
 + Added remaining lease time to tiles for leased clients
